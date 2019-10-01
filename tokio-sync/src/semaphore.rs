@@ -3,10 +3,10 @@
 //! A `Semaphore` instance holds a set of permits. Permits are used to
 //! synchronize access to a shared resource.
 //!
-//! Before accessing the shared resource, callers acquire a permit from the
-//! semaphore. Once the permit is acquired, the caller then enters the critical
+//! Before accessing the shared resource, callers acquire a permits from the
+//! semaphore. Once the permits is acquired, the caller then enters the critical
 //! section. If no permits are available, then acquiring the semaphore returns
-//! `Pending`. The task is woken once a permit becomes available.
+//! `Pending`. The task is woken once a permits becomes available.
 
 use crate::loom::{
     future::AtomicWaker,
@@ -41,28 +41,29 @@ pub struct Semaphore {
     stub: Box<WaiterNode>,
 }
 
-/// A semaphore permit
+/// A semaphore permits
 ///
-/// Tracks the lifecycle of a semaphore permit.
+/// Tracks the lifecycle of a semaphore permits.
 ///
-/// An instance of `Permit` is intended to be used with a **single** instance of
-/// `Semaphore`. Using a single instance of `Permit` with multiple semaphore
+/// An instance of `Permits` is intended to be used with a **single** instance of
+/// `Semaphore`. Using a single instance of `Permits` with multiple semaphore
 /// instances will result in unexpected behavior.
 ///
-/// `Permit` does **not** release the permit back to the semaphore on drop. It
-/// is the user's responsibility to ensure that `Permit::release` is called
-/// before dropping the permit.
+/// `Permits` does **not** release the permits back to the semaphore on drop. It
+/// is the user's responsibility to ensure that `Permits::release` is called
+/// before dropping the permits.
 #[derive(Debug)]
-pub struct Permit {
+pub struct Permits {
     waiter: Option<Arc<WaiterNode>>,
-    state: PermitState,
+    state: PermitsState,
+    qty: usize,
 }
 
-/// Error returned by `Permit::poll_acquire`.
+/// Error returned by `Permits::poll_acquire`.
 #[derive(Debug)]
 pub struct AcquireError(());
 
-/// Error returned by `Permit::try_acquire`.
+/// Error returned by `Permits::try_acquire`.
 #[derive(Debug)]
 pub struct TryAcquireError {
     kind: ErrorKind,
@@ -74,7 +75,7 @@ enum ErrorKind {
     NoPermits,
 }
 
-/// Node used to notify the semaphore waiter when permit is available.
+/// Node used to notify the semaphore waiter when permits is available.
 #[derive(Debug)]
 struct WaiterNode {
     /// Stores waiter state.
@@ -82,7 +83,7 @@ struct WaiterNode {
     /// See `NodeState` for more details.
     state: AtomicUsize,
 
-    /// Task to wake when a permit is made available.
+    /// Task to wake when a permits is made available.
     waker: AtomicWaker,
 
     /// Next pointer in the queue of waiting senders.
@@ -102,17 +103,17 @@ struct WaiterNode {
 #[derive(Copy, Clone)]
 struct SemState(usize);
 
-/// Permit state
+/// Permits state
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
-enum PermitState {
-    /// The permit has not been requested.
+enum PermitsState {
+    /// The permits has not been requested.
     Idle,
 
-    /// Currently waiting for a permit to be made available and assigned to the
+    /// Currently waiting for a permits to be made available and assigned to the
     /// waiter.
     Waiting,
 
-    /// The permit has been acquired.
+    /// The permits has been acquired.
     Acquired,
 }
 
@@ -120,23 +121,23 @@ enum PermitState {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[repr(usize)]
 enum NodeState {
-    /// Not waiting for a permit and the node is not in the wait queue.
+    /// Not waiting for a permits and the node is not in the wait queue.
     ///
     /// This is the initial state.
     Idle = 0,
 
-    /// Not waiting for a permit but the node is in the wait queue.
+    /// Not waiting for a permits but the node is in the wait queue.
     ///
-    /// This happens when the waiter has previously requested a permit, but has
+    /// This happens when the waiter has previously requested a permits, but has
     /// since canceled the request. The node cannot be removed by the waiter, so
     /// this state informs the receiver to skip the node when it pops it from
     /// the wait queue.
     Queued = 1,
 
-    /// Waiting for a permit and the node is in the wait queue.
+    /// Waiting for a permits and the node is in the wait queue.
     QueuedWaiting = 2,
 
-    /// The waiter has been assigned a permit and the node has been removed from
+    /// The waiter has been assigned a permits and the node has been removed from
     /// the queue.
     Assigned = 3,
 
@@ -175,15 +176,16 @@ impl Semaphore {
         curr.available_permits()
     }
 
-    /// Poll for a permit
-    fn poll_permit(
+    /// Poll for a permits
+    fn poll_permits(
         &self,
-        mut permit: Option<(&mut Context<'_>, &mut Permit)>,
+        qty: usize,
+        mut permits: Option<(&mut Context<'_>, &mut Permits)>,
     ) -> Poll<Result<(), AcquireError>> {
         // Load the current state
         let mut curr = SemState::load(&self.state, Acquire);
 
-        debug!(" + poll_permit; sem-state = {:?}", curr);
+        debug!(" + poll_permits; sem-state = {:?}", curr);
 
         // Tracks a *mut WaiterNode representing an Arc clone.
         //
@@ -194,7 +196,7 @@ impl Semaphore {
             () => {
                 if let Some(waiter) = maybe_strong {
                     // The waiter was cloned, but never got queued.
-                    // Before entering `poll_permit`, the waiter was in the
+                    // Before entering `poll_permits`, the waiter was in the
                     // `Idle` state. We must transition the node back to the
                     // idle state.
                     let waiter = unsafe { Arc::from_raw(waiter.as_ptr()) };
@@ -211,24 +213,24 @@ impl Semaphore {
                 return Ready(Err(AcquireError::closed()));
             }
 
-            if !next.acquire_permit(&self.stub) {
-                debug!(" + poll_permit -- no permits");
+            if !next.acquire_permits(qty, &self.stub) {
+                debug!(" + poll_permits -- not enough permits");
 
                 debug_assert!(curr.waiter().is_some());
 
                 if maybe_strong.is_none() {
-                    if let Some((ref mut cx, ref mut permit)) = permit {
+                    if let Some((ref mut cx, ref mut permits)) = permits {
                         // Get the Sender's waiter node, or initialize one
-                        let waiter = permit
+                        let waiter = permits
                             .waiter
                             .get_or_insert_with(|| Arc::new(WaiterNode::new()));
 
                         waiter.register(cx);
 
-                        debug!(" + poll_permit -- to_queued_waiting");
+                        debug!(" + poll_permits -- to_queued_waiting");
 
                         if !waiter.to_queued_waiting() {
-                            debug!(" + poll_permit; waiter already queued");
+                            debug!(" + poll_permits; waiter already queued");
                             // The node is alrady queued, there is no further work
                             // to do.
                             return Pending;
@@ -245,14 +247,14 @@ impl Semaphore {
                 next.set_waiter(maybe_strong.unwrap());
             }
 
-            debug!(" + poll_permit -- pre-CAS; next = {:?}", next);
+            debug!(" + poll_permits -- pre-CAS; next = {:?}", next);
 
             debug_assert_ne!(curr.0, 0);
             debug_assert_ne!(next.0, 0);
 
             match next.compare_exchange(&self.state, curr, AcqRel, Acquire) {
                 Ok(_) => {
-                    debug!(" + poll_permit -- CAS ok");
+                    debug!(" + poll_permits -- CAS ok");
                     match curr.waiter() {
                         Some(prev_waiter) => {
                             let waiter = maybe_strong.unwrap();
@@ -262,12 +264,12 @@ impl Semaphore {
                                 prev_waiter.as_ref().next.store(waiter.as_ptr(), Release);
                             }
 
-                            debug!(" + poll_permit -- waiter pushed");
+                            debug!(" + poll_permits -- waiter pushed");
 
                             return Pending;
                         }
                         None => {
-                            debug!(" + poll_permit -- permit acquired");
+                            debug!(" + poll_permits -- permit acquired");
 
                             undo_strong!();
 
@@ -545,135 +547,138 @@ impl fmt::Debug for Semaphore {
 unsafe impl Send for Semaphore {}
 unsafe impl Sync for Semaphore {}
 
-// ===== impl Permit =====
+// ===== impl Permits =====
 
-impl Permit {
-    /// Create a new `Permit`.
+impl Permits {
+    /// Create a new `Permits`.
     ///
-    /// The permit begins in the "unacquired" state.
+    /// The permits begins in the "unacquired" state.
     ///
     /// # Examples
     ///
     /// ```
-    /// use tokio_sync::semaphore::Permit;
+    /// use tokio_sync::semaphore::Permits;
     ///
-    /// let permit = Permit::new();
-    /// assert!(!permit.is_acquired());
+    /// let permits = Permits::new();
+    /// assert!(!permits.is_acquired());
     /// ```
-    pub fn new() -> Permit {
-        Permit {
+    pub fn new(qty: usize) -> Permits {
+        Permits {
             waiter: None,
-            state: PermitState::Idle,
+            state: PermitsState::Idle,
+            qty,
         }
     }
 
-    /// Returns true if the permit has been acquired
+    /// Returns true if the permits has been acquired
     pub fn is_acquired(&self) -> bool {
-        self.state == PermitState::Acquired
+        self.state == PermitsState::Acquired
     }
 
-    /// Try to acquire the permit. If no permits are available, the current task
-    /// is notified once a new permit becomes available.
+    pub fn held(&self) -> Option<usize> {
+        if self.is_acquired() {
+            Some(self.qty)
+        } else {
+            None
+        }
+    }
+
+    /// Try to acquire the permits. If no permit are available, the current task
+    /// is notified once a new permits becomes available.
     pub fn poll_acquire(
         &mut self,
         cx: &mut Context<'_>,
         semaphore: &Semaphore,
     ) -> Poll<Result<(), AcquireError>> {
         match self.state {
-            PermitState::Idle => {}
-            PermitState::Waiting => {
+            PermitsState::Idle => {}
+            PermitsState::Waiting => {
                 let waiter = self.waiter.as_ref().unwrap();
 
                 if waiter.acquire(cx)? {
-                    self.state = PermitState::Acquired;
+                    self.state = PermitsState::Acquired;
                     return Ready(Ok(()));
                 } else {
                     return Pending;
                 }
             }
-            PermitState::Acquired => {
+            PermitsState::Acquired => {
                 return Ready(Ok(()));
             }
         }
 
-        match semaphore.poll_permit(Some((cx, self)))? {
+        match semaphore.poll_permits(self.qty, Some((cx, self)))? {
             Ready(()) => {
-                self.state = PermitState::Acquired;
+                self.state = PermitsState::Acquired;
                 Ready(Ok(()))
             }
             Pending => {
-                self.state = PermitState::Waiting;
+                self.state = PermitsState::Waiting;
                 Pending
             }
         }
     }
 
-    /// Try to acquire the permit.
+    /// Try to acquire the permits.
     pub fn try_acquire(&mut self, semaphore: &Semaphore) -> Result<(), TryAcquireError> {
         match self.state {
-            PermitState::Idle => {}
-            PermitState::Waiting => {
+            PermitsState::Idle => {}
+            PermitsState::Waiting => {
                 let waiter = self.waiter.as_ref().unwrap();
 
                 if waiter.acquire2().map_err(to_try_acquire)? {
-                    self.state = PermitState::Acquired;
+                    self.state = PermitsState::Acquired;
                     return Ok(());
                 } else {
                     return Err(TryAcquireError::no_permits());
                 }
             }
-            PermitState::Acquired => {
+            PermitsState::Acquired => {
                 return Ok(());
             }
         }
 
-        match semaphore.poll_permit(None).map_err(to_try_acquire)? {
+        match semaphore.poll_permits(self.qty, None).map_err(to_try_acquire)? {
             Ready(()) => {
-                self.state = PermitState::Acquired;
+                self.state = PermitsState::Acquired;
                 Ok(())
             }
             Pending => Err(TryAcquireError::no_permits()),
         }
     }
 
-    /// Release a permit back to the semaphore
+    /// Release a permits back to the semaphore
     pub fn release(&mut self, semaphore: &Semaphore) {
         if self.forget2() {
-            semaphore.add_permits(1);
+            semaphore.add_permits(self.qty);
         }
     }
 
-    /// Forget the permit **without** releasing it back to the semaphore.
+    /// Forget the permits **without** releasing it back to the semaphore.
     ///
-    /// After calling `forget`, `poll_acquire` is able to acquire new permit
+    /// After calling `forget`, `poll_acquire` is able to acquire new permits
     /// from the sempahore.
     ///
-    /// Repeatedly calling `forget` without associated calls to `add_permit`
+    /// Repeatedly calling `forget` without associated calls to `add_permits`
     /// will result in the semaphore losing all permits.
     pub fn forget(&mut self) {
         self.forget2();
     }
 
-    /// Returns `true` if the permit was acquired
+    /// Returns `true` if the permits was acquired
     fn forget2(&mut self) -> bool {
         match self.state {
-            PermitState::Idle => false,
-            PermitState::Waiting => {
+            PermitsState::Idle => false,
+            PermitsState::Waiting => {
                 let ret = self.waiter.as_ref().unwrap().cancel_interest();
-                self.state = PermitState::Idle;
+                self.state = PermitsState::Idle;
                 ret
             }
-            PermitState::Acquired => {
-                self.state = PermitState::Idle;
+            PermitsState::Acquired => {
+                self.state = PermitsState::Idle;
                 true
             }
         }
-    }
-}
-
-impl Default for Permit {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -777,18 +782,18 @@ impl WaiterNode {
         self.waker.register_by_ref(cx.waker())
     }
 
-    /// Returns `true` if the permit has been acquired
+    /// Returns `true` if the permits has been acquired
     fn cancel_interest(&self) -> bool {
         use self::NodeState::*;
 
         match Queued.compare_exchange(&self.state, QueuedWaiting, AcqRel, Acquire) {
-            // Successfully removed interest from the queued node. The permit
+            // Successfully removed interest from the queued node. The permits
             // has not been assigned to the node.
             Ok(_) => false,
             // The semaphore has been closed, there is no further action to
             // take.
             Err(Closed) => false,
-            // The permit has been assigned. It must be acquired in order to
+            // The permits has been assigned. It must be acquired in order to
             // be released back to the semaphore.
             Err(Assigned) => {
                 match self.acquire2() {
@@ -945,21 +950,21 @@ impl SemState {
         !self.has_available_permits() && !self.is_stub(stub)
     }
 
-    /// Try to acquire a permit
+    /// Try to acquire a permits
     ///
     /// # Return
     ///
-    /// Returns `true` if the permit was acquired, `false` otherwise. If `false`
+    /// Returns `true` if the permits were acquired, `false` otherwise. If `false`
     /// is returned, it can be assumed that `State` represents the head pointer
     /// in the mpsc channel.
-    fn acquire_permit(&mut self, stub: &WaiterNode) -> bool {
-        if !self.has_available_permits() {
+    fn acquire_permits(&mut self, qty: usize, stub: &WaiterNode) -> bool {
+        if self.available_permits() < qty {
             return false;
         }
 
         debug_assert!(self.waiter().is_none());
 
-        self.0 -= 1 << NUM_SHIFT;
+        self.0 -= qty << NUM_SHIFT;
 
         if self.0 == NUM_FLAG {
             // Set the state to the stub pointer.
@@ -972,17 +977,17 @@ impl SemState {
     /// Release permits
     ///
     /// Returns `true` if the permits were accepted.
-    fn release_permits(&mut self, permits: usize, stub: &WaiterNode) {
-        debug_assert!(permits > 0);
+    fn release_permits(&mut self, qty: usize, stub: &WaiterNode) {
+        debug_assert!(qty > 0);
 
         if self.is_stub(stub) {
-            self.0 = (permits << NUM_SHIFT) | NUM_FLAG | (self.0 & CLOSED_FLAG);
+            self.0 = (qty << NUM_SHIFT) | NUM_FLAG | (self.0 & CLOSED_FLAG);
             return;
         }
 
         debug_assert!(self.has_available_permits());
 
-        self.0 += permits << NUM_SHIFT;
+        self.0 += qty << NUM_SHIFT;
     }
 
     fn is_waiter(self) -> bool {

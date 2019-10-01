@@ -351,16 +351,16 @@ impl From<TryAcquireError> for TrySendError {
 
 // ===== impl Semaphore for (::Semaphore, capacity) =====
 
-use crate::semaphore::Permit;
+use crate::semaphore::Permits;
 
 impl Semaphore for (crate::semaphore::Semaphore, usize) {
-    type Permit = Permit;
+    type Permit = Permits;
 
-    fn new_permit() -> Permit {
-        Permit::new()
+    fn new_permit() -> Permits {
+        Permits::new(1)
     }
 
-    fn drop_permit(&self, permit: &mut Permit) {
+    fn drop_permit(&self, permit: &mut Self::Permit) {
         permit.release(&self.0);
     }
 
@@ -372,11 +372,11 @@ impl Semaphore for (crate::semaphore::Semaphore, usize) {
         self.0.available_permits() == self.1
     }
 
-    fn poll_acquire(&self, cx: &mut Context<'_>, permit: &mut Permit) -> Poll<Result<(), ()>> {
+    fn poll_acquire(&self, cx: &mut Context<'_>, permit: &mut Self::Permit) -> Poll<Result<(), ()>> {
         permit.poll_acquire(cx, &self.0).map_err(|_| ())
     }
 
-    fn try_acquire(&self, permit: &mut Permit) -> Result<(), TrySendError> {
+    fn try_acquire(&self, permit: &mut Self::Permit) -> Result<(), TrySendError> {
         permit.try_acquire(&self.0)?;
         Ok(())
     }

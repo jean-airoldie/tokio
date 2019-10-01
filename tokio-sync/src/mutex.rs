@@ -58,7 +58,7 @@ pub struct Mutex<T> {
 #[derive(Debug)]
 pub struct MutexGuard<'a, T> {
     lock: &'a Mutex<T>,
-    permit: semaphore::Permit,
+    permit: semaphore::Permits,
 }
 
 // As long as T: Send, it's fine to send and share Mutex<T> between threads.
@@ -85,7 +85,7 @@ impl<T> Mutex<T> {
 
     /// A future that resolves on acquiring the lock and returns the `MutexGuard`.
     pub async fn lock(&self) -> MutexGuard<'_, T> {
-        let mut permit = semaphore::Permit::new();
+        let mut permit = semaphore::Permits::new(1);
         poll_fn(|cx| permit.poll_acquire(cx, &self.s))
             .await
             .unwrap_or_else(|_| {

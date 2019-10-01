@@ -26,7 +26,7 @@ fn basic_usage() {
     const NUM: usize = 2;
 
     struct Actor {
-        waiter: Permit,
+        waiter: Permits,
         shared: Arc<Shared>,
     }
 
@@ -66,14 +66,14 @@ fn basic_usage() {
 
             thread::spawn(move || {
                 block_on(Actor {
-                    waiter: Permit::new(),
+                    waiter: Permits::new(1),
                     shared,
                 });
             });
         }
 
         block_on(Actor {
-            waiter: Permit::new(),
+            waiter: Permits::new(1),
             shared,
         });
     });
@@ -87,7 +87,7 @@ fn release() {
         {
             let semaphore = semaphore.clone();
             thread::spawn(move || {
-                let mut permit = Permit::new();
+                let mut permit = Permits::new(1);
 
                 block_on(poll_fn(|cx| permit.poll_acquire(cx, &semaphore))).unwrap();
 
@@ -95,7 +95,7 @@ fn release() {
             });
         }
 
-        let mut permit = Permit::new();
+        let mut permit = Permits::new(1);
 
         block_on(poll_fn(|cx| permit.poll_acquire(cx, &semaphore))).unwrap();
 
@@ -114,7 +114,7 @@ fn basic_closing() {
             let semaphore = semaphore.clone();
 
             thread::spawn(move || {
-                let mut permit = Permit::new();
+                let mut permit = Permits::new(1);
 
                 for _ in 0..2 {
                     block_on(poll_fn(|cx| {
@@ -143,7 +143,7 @@ fn concurrent_close() {
             let semaphore = semaphore.clone();
 
             thread::spawn(move || {
-                let mut permit = Permit::new();
+                let mut permit = Permits::new(1);
 
                 block_on(poll_fn(|cx| {
                     permit.poll_acquire(cx, &semaphore).map_err(|_| ())
