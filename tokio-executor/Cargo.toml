@@ -10,7 +10,7 @@ name = "tokio-executor"
 version = "0.2.0-alpha.7"
 publish = ["zezima"]
 edition = "2018"
-documentation = "https://docs.rs/tokio-executor/0.2.0-alpha.6/tokio_executor"
+documentation = "https://docs.rs/tokio-executor/0.2.0-alpha.7/tokio_executor"
 repository = "https://github.com/tokio-rs/tokio"
 homepage = "https://github.com/tokio-rs/tokio"
 license = "MIT"
@@ -28,7 +28,7 @@ thread-pool = ["num_cpus"]
 
 [dependencies]
 futures-util-preview = { version = "=0.3.0-alpha.19", features = ["channel"] }
-tokio-sync = { version = "=0.2.0-alpha.6", path = "../tokio-sync" }
+tokio-sync = { version = "=0.2.0-alpha.7", path = "../tokio-sync" }
 
 # current-thread dependencies
 crossbeam-channel = { version = "0.3.8", optional = true }
@@ -41,9 +41,9 @@ futures-core-preview = { version = "=0.3.0-alpha.19", optional = true }
 lazy_static = { version = "1", optional = true }
 
 [dev-dependencies]
-tokio = { version = "=0.2.0-alpha.6", path = "../tokio" }
-tokio-sync = { version = "=0.2.0-alpha.6", path = "../tokio-sync" }
-tokio-test = { version = "=0.2.0-alpha.6", path = "../tokio-test" }
+tokio = { version = "=0.2.0-alpha.7", path = "../tokio" }
+tokio-sync = { version = "=0.2.0-alpha.7", path = "../tokio-sync" }
+tokio-test = { version = "=0.2.0-alpha.7", path = "../tokio-test" }
 
 futures-core-preview = "=0.3.0-alpha.19"
 loom = { version = "0.2.11", features = ["futures", "checkpoint"] }

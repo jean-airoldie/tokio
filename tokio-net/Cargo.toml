@@ -15,7 +15,7 @@ license = "MIT"
 readme = "README.md"
 repository = "https://github.com/tokio-rs/tokio"
 homepage = "https://tokio.rs"
-documentation = "https://docs.rs/tokio-net/0.2.0-alpha.6/tokio_net"
+documentation = "https://docs.rs/tokio-net/0.2.0-alpha.7/tokio_net"
 description = """
 Event loop that drives Tokio I/O resources.
 """
@@ -62,9 +62,9 @@ uds = [
 ]
 
 [dependencies]
-tokio-executor = { version = "=0.2.0-alpha.6", features = ["blocking"], path = "../tokio-executor" }
-tokio-io = { version = "=0.2.0-alpha.6", path = "../tokio-io" }
-tokio-sync = { version = "=0.2.0-alpha.6", path = "../tokio-sync" }
+tokio-executor = { version = "=0.2.0-alpha.7", features = ["blocking"], path = "../tokio-executor" }
+tokio-io = { version = "=0.2.0-alpha.7", path = "../tokio-io" }
+tokio-sync = { version = "=0.2.0-alpha.7", path = "../tokio-sync" }
 
 # driver implementation
 crossbeam-utils = "0.6.0"
@@ -97,8 +97,8 @@ default-features = false
 optional = true
 
 [dev-dependencies]
-tokio = { version = "=0.2.0-alpha.6", path = "../tokio" }
-tokio-test = { version = "=0.2.0-alpha.6", path = "../tokio-test" }
+tokio = { version = "=0.2.0-alpha.7", path = "../tokio" }
+tokio-test = { version = "=0.2.0-alpha.7", path = "../tokio-test" }
 num_cpus = "1.8.0"
 tokio-io-pool = "0.1.4"
 
