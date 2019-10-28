@@ -7,7 +7,7 @@ name = "tokio-sync"
 #   - Cargo.toml
 # - Update CHANGELOG.md.
 # - Create "v0.2.x" git tag.
-version = "0.2.0-alpha.6"
+version = "0.2.0-alpha.7"
 publish = ["zezima"]
 edition = "2018"
 authors = ["Tokio Contributors <team@tokio.rs>"]
