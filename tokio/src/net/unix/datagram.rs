@@ -1,3 +1,4 @@
+use super::split::{split_dgram, RecvHalf, SendHalf};
 use crate::net::util::PollEvented;
 
 use futures_core::ready;
@@ -191,6 +192,11 @@ impl UnixDatagram {
     /// (see the documentation of `Shutdown`).
     pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
         self.io.get_ref().shutdown(how)
+    }
+
+    /// Splits the socket into a `RecvHalf` and `SendHalf`.
+    pub fn split(&mut self) -> (RecvHalf<'_>, SendHalf<'_>) {
+        split_dgram(self)
     }
 }
 
