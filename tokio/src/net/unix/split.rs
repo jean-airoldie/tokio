@@ -65,6 +65,12 @@ impl RecvHalf<'_> {
     pub async fn recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
         poll_fn(|cx| self.0.poll_recv_from_priv(cx, buf)).await
     }
+
+    /// Try to recv a datagram from the socket without blocking.
+    pub fn try_recv_from(&mut self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        self.0.try_recv_from_priv(buf)
+    }
+
 }
 
 impl SendHalf<'_> {
@@ -80,6 +86,15 @@ impl SendHalf<'_> {
     {
         poll_fn(|cx| self.0.poll_send_to_priv(cx, buf, target.as_ref())).await
     }
+
+    /// Try to send a datagram to the target from the socket without blocking.
+    pub fn try_send_to<P>(&mut self, buf: &[u8], target: P) -> io::Result<usize>
+    where
+        P: AsRef<Path>,
+    {
+        self.0.try_send_to_priv(buf, target)
+    }
+
 }
 
 impl AsyncRead for ReadHalf<'_> {
